@@ -84,10 +84,11 @@ void resize_gaussian_yolo_layer(layer *l, int w, int h)
 box get_gaussian_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw, int lh, int w, int h, int stride)
 {
     box b;
-    b.x = (i + x[index + 0*stride]) / lw;
-    b.y = (j + x[index + 2*stride]) / lh;
-    b.w = exp(x[index + 4*stride]) * biases[2*n]   / w;
-    b.h = exp(x[index + 6*stride]) * biases[2*n+1] / h;
+    b.x = (i + x[index + 0*stride]) / lw; // 0 = point x mean
+    b.y = (j + x[index + 2*stride]) / lh; // 2 = point y mean
+    b.w = exp(x[index + 4*stride]) * biases[2*n]   / w; // bbox width mean
+    b.h = exp(x[index + 6*stride]) * biases[2*n+1] / h; // bbox height mean
+    // bbox를 계산하는 방식은 기존 YOLO와 
     return b;
 }
 
@@ -95,14 +96,14 @@ float delta_gaussian_yolo_box(box truth, float *x, float *biases, int n, int ind
 {
     box pred = get_gaussian_yolo_box(x, biases, n, index, i, j, lw, lh, w, h, stride);
     float iou = box_iou(pred, truth);
-
+    /* GT값 변환*/
     float tx = (truth.x*lw - i);
     float ty = (truth.y*lh - j);
     float tw = log(truth.w*w / biases[2*n]);
     float th = log(truth.h*h / biases[2*n + 1]);
-
+    //biases = Anchor box의 값 : +0 = width , +1 = height
     float sigma_const = 0.3;
-    float epsi = pow(10,-9);
+    float epsi = pow(10,-9); // 논문에서 언급한 엡실론 값
 
     float in_exp_x = (tx - x[index + 0*stride])/x[index+1*stride];
     float in_exp_x_2 = pow(in_exp_x, 2);
@@ -154,9 +155,9 @@ void delta_gaussian_yolo_class(float *output, float *delta, int index, int class
 
 static int entry_gaussian_index(layer l, int batch, int location, int entry)
 {
-    int n =   location / (l.w*l.h);
-    int loc = location % (l.w*l.h);
-    return batch*l.outputs + n*l.w*l.h*(8+l.classes+1) + entry*l.w*l.h + loc;
+    int n =   location / (l.w*l.h); // 0
+    int loc = location % (l.w*l.h); // 0 
+    return batch*l.outputs + n*l.w*l.h*(8+l.classes+1) + entry*l.w*l.h + loc; // 몇번째 이미지 + 몇번째 Anchor + entry = ? + loc : ?
 }
 
 void forward_gaussian_yolo_layer(const layer l, network net)
@@ -166,9 +167,9 @@ void forward_gaussian_yolo_layer(const layer l, network net)
 
 #ifndef GPU
     for (b = 0; b < l.batch; ++b){
-        for(n = 0; n < l.n; ++n){
+        for(n = 0; n < l.n; ++n){ // 0 ~ 3 Anchor box 개수 
             // x : mu, sigma
-            int index = entry_gaussian_index(l, b, n*l.w*l.h, 0);
+            int index = entry_gaussian_index(l, b, n*l.w*l.h, 0);// 0 , l.w*l.h , 2*l.w*l.h
             activate_array(l.output + index, 2*l.w*l.h, LOGISTIC);
             // y : mu, sigma
             index = entry_gaussian_index(l, b, n*l.w*l.h, 2);
